@@ -33,6 +33,10 @@ prelude = r"""
 #include <stdio.h>
 #include <string.h>
 #define LE_LINK 1
+#define LE_ADV_IND 0x00
+#define LE_ADV_SCAN_IND 0x02
+#define LE_ADV_NONCONN_IND 0x03
+typedef uint8_t u8;
 struct hci_dev {
   struct { unsigned int le_num_slave; } conn_hash;
   unsigned int connections;
@@ -46,6 +50,7 @@ int main(void)
 {
   const unsigned int bits[] = {17, 18, 19, 28, 35, 41};
   const unsigned int roles[][2] = {{0,0}, {1,0}, {2,0}, {1,1}, {2,1}};
+  const u8 types[] = {LE_ADV_IND, LE_ADV_SCAN_IND, LE_ADV_NONCONN_IND};
   unsigned int failed = 0, cases = 0;
   for (unsigned int mask = 0; mask < 64; ++mask) {
     uint64_t states = 0;
@@ -56,12 +61,12 @@ int main(void)
       hdev.conn_hash.le_num_slave = roles[role][1];
       for (unsigned int byte = 0; byte < 8; ++byte)
         hdev.le_states[byte] = states >> (8 * byte);
-      for (unsigned int connectable = 0; connectable < 2; ++connectable) {
+      for (unsigned int type = 0; type < 3; ++type) {
         bool expected = !hdev.connections || (!hdev.conn_hash.le_num_slave &&
-          (connectable ? ((states & (UINT64_C(1) << 35)) &&
-                          (states & (UINT64_C(1) << 19))) :
-                         !!(states & (UINT64_C(1) << 18))));
-        failed += is_advertising_allowed(&hdev, connectable) != expected;
+          (types[type] == LE_ADV_NONCONN_IND ? !!(states & (UINT64_C(1) << 18)) :
+           ((states & (UINT64_C(1) << 19)) &&
+            (types[type] == LE_ADV_SCAN_IND || (states & (UINT64_C(1) << 35))))));
+        failed += is_advertising_allowed(&hdev, types[type]) != expected;
         ++cases;
       }
       bool expected = !hdev.conn_hash.le_num_slave ||

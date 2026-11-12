@@ -912,7 +912,7 @@ static bool adv_use_rpa(struct hci_dev *hdev, uint32_t flags)
 	return true;
 }
 
-static bool is_advertising_allowed(struct hci_dev *hdev, bool connectable)
+static bool is_advertising_allowed(struct hci_dev *hdev, u8 type)
 {
 	/* If there is no connection we are OK to advertise. */
 	if (hci_conn_num(hdev, LE_LINK) == 0)
@@ -923,8 +923,12 @@ static bool is_advertising_allowed(struct hci_dev *hdev, bool connectable)
 		return false;
 
 	/* Master connection state and non connectable mode bit 18. */
-	if (!connectable)
+	if (type == LE_ADV_NONCONN_IND)
 		return hdev->le_states[2] & 0x04;
+
+	/* Master connection state and scannable mode bit 19. */
+	if (type == LE_ADV_SCAN_IND)
+		return hdev->le_states[2] & 0x08;
 
 	/* Master connection state and connectable mode bit 35 and
 	 * scannable 19.
@@ -936,7 +940,7 @@ void __hci_req_enable_advertising(struct hci_request *req)
 {
 	struct hci_dev *hdev = req->hdev;
 	struct hci_cp_le_set_adv_param cp;
-	u8 own_addr_type, enable = 0x01;
+	u8 own_addr_type, enable = 0x01, type;
 	bool connectable;
 	u32 flags;
 
@@ -948,7 +952,14 @@ void __hci_req_enable_advertising(struct hci_request *req)
 	connectable = (flags & MGMT_ADV_FLAG_CONNECTABLE) ||
 		      mgmt_get_connectable(hdev);
 
-	if (!is_advertising_allowed(hdev, connectable))
+	if (connectable)
+		type = LE_ADV_IND;
+	else if (get_cur_adv_instance_scan_rsp_len(hdev))
+		type = LE_ADV_SCAN_IND;
+	else
+		type = LE_ADV_NONCONN_IND;
+
+	if (!is_advertising_allowed(hdev, type))
 		return;
 
 	if (hci_dev_test_flag(hdev, HCI_LE_ADV))
@@ -974,13 +985,7 @@ void __hci_req_enable_advertising(struct hci_request *req)
 	cp.min_interval = cpu_to_le16(hdev->le_adv_min_interval);
 	cp.max_interval = cpu_to_le16(hdev->le_adv_max_interval);
 
-	if (connectable)
-		cp.type = LE_ADV_IND;
-	else if (get_cur_adv_instance_scan_rsp_len(hdev))
-		cp.type = LE_ADV_SCAN_IND;
-	else
-		cp.type = LE_ADV_NONCONN_IND;
-
+	cp.type = type;
 	cp.own_address_type = own_addr_type;
 	cp.channel_map = hdev->le_adv_channel_map;
 
